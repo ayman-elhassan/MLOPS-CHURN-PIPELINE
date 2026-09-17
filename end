@@ -1,0 +1,20 @@
+[33md6d1d06[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Update CI workflow for Python version and steps
+[33m4481015[m Add GitHub Actions workflow for Python application
+[33made2d87[m Update test_load_yaml_config to assert raw YAML text alongside parsed result
+[33mf196fd4[m Add CI workflow for testing on push and pull request events
+[33m67cb3f7[m Update load_config to return raw text along with parsed YAML configuration
+[33m1f59d4d[m Refactor load_yaml_config to return original text along with parsed YAML mapping
+[33m3627229[m Refactor import statements in test_ingest.py for better organization
+[33mb264917[m Update error message for invalid YAML root in load_config test
+[33m09eb655[m Remove unused YAML configuration loading function from ingest module
+[33mdfd617f[m Add low-level YAML loading function for configuration parsing
+[33m36e36b2[m Add configuration parsing helpers and validated configuration models documentation
+[33m6070368[m Refactor YAML configuration loading to use dedicated loader function and improve error handling
+[33m8adc7e5[m Update coverage report to reflect changes in test coverage
+[33m99f8fa3[m Update coverage report to reflect recent test additions and improvements
+[33m50d1f04[m Add tests for pipeline orchestrator skeleton to ensure unimplemented workflows fail clearly
+[33m6729c1f[m Add unit tests for configuration loading and pipeline execution
+[33m97c7cf6[m Add initial pipeline configuration file for telco customer churn model
+[33mcfcb164[m Implement main pipeline entry point with configuration loading and run context management
+[33mad1586e[m Refactor pipeline.py to improve orchestration documentation and structure
+[33mea4cffc[m Update coverage report to reflect recent test changes
