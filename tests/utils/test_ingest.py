@@ -2,6 +2,7 @@
 # Imports
 # -----------------------------------------------------------------------------
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,6 +15,7 @@ from src.utils.ingest import calculate_sha256, download_stream
 # -----------------------------------------------------------------------------
 # load_yaml
 # -----------------------------------------------------------------------------
+
 
 def test_load_yaml_config_success(tmp_path):
     # Setup: Create a valid YAML file
@@ -63,6 +65,7 @@ def test_load_yaml_config_invalid_syntax(tmp_path):
 # calculate_sha256
 # -----------------------------------------------------------------------------
 
+
 def test_calculate_sha256_working(tmp_path):
     # test case 1 correct output testing
     file = tmp_path / "sample.txt"
@@ -91,11 +94,12 @@ def test_calculate_sha256_no_file(tmp_path):
 # download_stream
 # -----------------------------------------------------------------------------
 
+
 @patch("src.utils.ingest.requests.get")
 def test_download_stream_success(mock_get, tmp_path):
     output_file = tmp_path / "downloaded_data.bin"
     fake_url = "https://example.com/dataset.zip"
-    
+
     mock_response = MagicMock()
     mock_response.iter_content.return_value = [b"chunk1_", b"chunk2"]
     mock_get.return_value.__enter__.return_value = mock_response
@@ -108,13 +112,54 @@ def test_download_stream_success(mock_get, tmp_path):
 
 
 @patch("src.utils.ingest.requests.get")
+def test_download_stream_overwrites_existing_output_file(mock_get, tmp_path):
+    output_file = tmp_path / "data.bin"
+    output_file.write_bytes(b"old content")
+    temp_file = output_file.with_suffix(output_file.suffix + ".part")
+    fake_url = "https://example.com/data.bin"
+
+    mock_response = MagicMock()
+    mock_response.iter_content.return_value = [b"new_", b"content"]
+    mock_get.return_value.__enter__.return_value = mock_response
+
+    download_stream(fake_url, output_file)
+
+    assert output_file.read_bytes() == b"new_content"
+    assert not temp_file.exists()
+
+
+@patch("src.utils.ingest.requests.get")
+def test_download_stream_does_not_rely_on_rename_overwriting(
+    mock_get, tmp_path, monkeypatch
+):
+    output_file = tmp_path / "data.bin"
+    output_file.write_bytes(b"old content")
+    fake_url = "https://example.com/data.bin"
+
+    mock_response = MagicMock()
+    mock_response.iter_content.return_value = [b"new_content"]
+    mock_get.return_value.__enter__.return_value = mock_response
+
+    def windows_style_rename(self, target):
+        raise FileExistsError(f"[WinError 183] {target}")
+
+    monkeypatch.setattr(Path, "rename", windows_style_rename)
+
+    download_stream(fake_url, output_file)
+
+    assert output_file.read_bytes() == b"new_content"
+
+
+@patch("src.utils.ingest.requests.get")
 def test_download_stream_http_error_cleans_up_temp_file(mock_get, tmp_path):
     output_file = tmp_path / "failed_download.bin"
     temp_file = output_file.with_suffix(output_file.suffix + ".part")
     fake_url = "https://example.com/404.zip"
 
     mock_response = MagicMock()
-    mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Not Found")
+    mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+        "404 Not Found"
+    )
     mock_get.return_value.__enter__.return_value = mock_response
 
     with pytest.raises(requests.exceptions.HTTPError, match="404 Not Found"):
@@ -140,10 +185,13 @@ def test_download_stream_invalid_output_directory(mock_get, tmp_path):
     assert not invalid_path.exists()
 
 
-@pytest.mark.parametrize("exception", [
-    requests.exceptions.Timeout("timed out"),
-    requests.exceptions.ConnectionError("connection refused"),
-])
+@pytest.mark.parametrize(
+    "exception",
+    [
+        requests.exceptions.Timeout("timed out"),
+        requests.exceptions.ConnectionError("connection refused"),
+    ],
+)
 @patch("src.utils.ingest.requests.get")
 def test_download_stream_request_level_errors_clean_up(mock_get, tmp_path, exception):
     output_file = tmp_path / "data.bin"
