@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from src.core.types import StageResult, StageStatus
+from src.core.types import StageFailed, StageResult, StageStatus
 from src.ingestion.manifest import IngestionManifest
 from src.storage.storage import get_raw_data_path
 from src.utils.ingest import calculate_sha256, download_stream
@@ -31,22 +31,19 @@ class IngestionItem:
     expected_sha256: str
 
 
-class IngestionStageFailed(Exception):
-    """Raised after a full ingestion run if one or more items failed
-    or came back corrupt. Individual failures are already recorded in
-    the manifest — this exception is only the batch-level signal that
-    something in the run needs attention.
+class IngestionStageFailed(StageFailed):
+    """Raised after the ingestion run if the item failed or came back
+    corrupt. The failure is already recorded in the manifest; this is the
+    stage-level signal that something needs attention.
 
-    Carries the finalized IngestionResult (result), so a caller that
-    catches this exception can still inspect stage_name,
-    duration_seconds, and exactly which items succeeded vs. failed —
-    the same information that would have been available had the run
-    succeeded outright.
+    Carries the finalized IngestionResult via .result, so a caller can
+    inspect which item succeeded or failed.
     """
 
+    result: "IngestionResult"
+
     def __init__(self, message: str, result: "IngestionResult"):
-        super().__init__(message)
-        self.result = result
+        super().__init__(message, result)
 
 
 @dataclass

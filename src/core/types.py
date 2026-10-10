@@ -70,7 +70,9 @@ class StageResult:
     duration_seconds: float
 
     @classmethod
-    def start(cls, stage_name: str, clock: Callable[[], datetime] | None = None) -> "_OpenStage":
+    def start(
+        cls, stage_name: str, clock: Callable[[], datetime] | None = None
+    ) -> "_OpenStage":
         """Begins timing a stage run.
 
         Returns an _OpenStage handle — call .finish(**fields) on it once
@@ -84,6 +86,19 @@ class StageResult:
             clock=clock,
             started_at_dt=_resolve_clock(clock),
         )
+
+
+class StageFailed(Exception):
+    """Base class for a pipeline stage that ran but did not succeed.
+
+    Carries the finalized StageResult so a caller can read stage_name and
+    duration_seconds for any stage's failure without knowing which stage it
+    was. Distinct from unexpected errors (bugs), which should not subclass it.
+    """
+
+    def __init__(self, message: str, result: StageResult):
+        super().__init__(message)
+        self.result = result
 
 
 @dataclass
@@ -204,7 +219,9 @@ def compute_schema_hash(column_names: list[str]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def build_dataset_ref(path: Path, clock: Callable[[], datetime] | None = None) -> DatasetRef:
+def build_dataset_ref(
+    path: Path, clock: Callable[[], datetime] | None = None
+) -> DatasetRef:
     """Builds a DatasetRef for a dataset a stage just produced.
 
     Supports .csv, matched case-insensitively on the file's suffix.

@@ -29,6 +29,7 @@ from pydantic import (
 from yaml import YAMLError
 
 from src.config.loader import load_yaml_config
+from src.core.types import StageFailed
 from src.pipelines.pipeline import run_pipeline
 from src.storage.storage import get_project_root
 
@@ -71,7 +72,9 @@ class SplitConfig(BaseModel):
     def sizes_must_sum_to_one(self) -> SplitConfig:
         total = self.train_size + self.validation_size + self.test_size
         if abs(total - 1.0) > 1e-9:
-            raise ValueError("train_size, validation_size, and test_size must sum to 1.0")
+            raise ValueError(
+                "train_size, validation_size, and test_size must sum to 1.0"
+            )
         return self
 
 
@@ -124,7 +127,9 @@ class ConfigurationError(Exception):
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse the optional path that selects the sole runtime config file."""
-    parser = argparse.ArgumentParser(description="Run the customer churn training pipeline.")
+    parser = argparse.ArgumentParser(
+        description="Run the customer churn training pipeline."
+    )
     parser.add_argument(
         "--config",
         type=Path,
@@ -139,7 +144,9 @@ def load_config(config_path: Path) -> tuple[PipelineConfig, str]:
     if not config_path.is_file():
         raise ConfigurationError(f"Configuration file not found: {config_path}")
     if config_path.suffix.lower() not in {".yaml", ".yml"}:
-        raise ConfigurationError("Configuration file must use a .yaml or .yml extension")
+        raise ConfigurationError(
+            "Configuration file must use a .yaml or .yml extension"
+        )
 
     try:
         raw_text, raw_config = load_yaml_config(config_path)
@@ -156,10 +163,16 @@ def load_config(config_path: Path) -> tuple[PipelineConfig, str]:
 
 def resolve_project_path(project_root: Path, configured_path: Path) -> Path:
     """Resolve a config path without allowing it to escape the project root."""
-    candidate = configured_path if configured_path.is_absolute() else project_root / configured_path
+    candidate = (
+        configured_path
+        if configured_path.is_absolute()
+        else project_root / configured_path
+    )
     resolved = candidate.resolve()
     if not resolved.is_relative_to(project_root.resolve()):
-        raise ConfigurationError(f"Configured path escapes the project root: {configured_path}")
+        raise ConfigurationError(
+            f"Configured path escapes the project root: {configured_path}"
+        )
     return resolved
 
 
@@ -167,23 +180,33 @@ def get_git_commit(project_root: Path) -> str | None:
     """Return the checked-out commit when Git is available, otherwise None."""
     try:
         completed = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=project_root, capture_output=True,
-            check=True, text=True, timeout=5,
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_root,
+            capture_output=True,
+            check=True,
+            text=True,
+            timeout=5,
         )
     except (OSError, subprocess.SubprocessError):
         return None
     return completed.stdout.strip() or None
 
 
-def create_run_context(config: PipelineConfig, project_root: Path, config_path: Path, config_sha256: str) -> RunContext:
+def create_run_context(
+    config: PipelineConfig, project_root: Path, config_path: Path, config_sha256: str
+) -> RunContext:
     """Create a unique run directory and the metadata that identifies it."""
     artifact_root = resolve_project_path(project_root, config.artifacts.directory)
     run_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid4().hex[:8]}"
     artifact_dir = artifact_root / run_id
     artifact_dir.mkdir(parents=True, exist_ok=False)
     context = RunContext(
-        run_id=run_id, started_at=datetime.now(timezone.utc), project_root=project_root,
-        config_path=config_path, config_sha256=config_sha256, artifact_dir=artifact_dir,
+        run_id=run_id,
+        started_at=datetime.now(timezone.utc),
+        project_root=project_root,
+        config_path=config_path,
+        config_sha256=config_sha256,
+        artifact_dir=artifact_dir,
         git_commit=get_git_commit(project_root),
     )
     write_run_metadata(context)
@@ -193,7 +216,9 @@ def create_run_context(config: PipelineConfig, project_root: Path, config_path: 
 def write_run_metadata(context: RunContext) -> None:
     """Preserve the effective config and immutable identifiers for this run."""
     config_copy_path = context.artifact_dir / "pipeline.yaml"
-    config_copy_path.write_text(context.config_path.read_text(encoding="utf-8"), encoding="utf-8")
+    config_copy_path.write_text(
+        context.config_path.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     metadata = {
         "run_id": context.run_id,
         "started_at": context.started_at.isoformat(),
@@ -209,7 +234,8 @@ def write_run_metadata(context: RunContext) -> None:
 def configure_logging() -> None:
     """Configure process-wide, CI-friendly logging once at application startup."""
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
         datefmt="%Y-%m-%dT%H:%M:%SZ",
     )
 
@@ -225,15 +251,30 @@ def main(argv: list[str] | None = None) -> int:
         context = create_run_context(config, project_root, config_path, config_sha256)
         logger.info(
             "Starting pipeline run_id=%s pipeline=%s config_sha256=%s git_commit=%s",
-            context.run_id, config.pipeline_name, context.config_sha256,
+            context.run_id,
+            config.pipeline_name,
+            context.config_sha256,
             context.git_commit or "unavailable",
         )
         result = run_pipeline(config, context)
-        logger.info("Pipeline completed run_id=%s artifact_dir=%s result=%s", context.run_id, context.artifact_dir, result)
+        logger.info(
+            "Pipeline completed run_id=%s artifact_dir=%s result=%s",
+            context.run_id,
+            context.artifact_dir,
+            result,
+        )
         return 0
     except ConfigurationError as exc:
         logger.error("Configuration error: %s", exc)
         return 2
+    except StageFailed as exc:
+        logger.error(
+            "Stage '%s' failed after %.2fs: %s",
+            exc.result.stage_name,
+            exc.result.duration_seconds,
+            exc,
+        )
+        return 3
     except Exception:
         logger.exception("Pipeline failed")
         return 1
