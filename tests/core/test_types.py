@@ -9,16 +9,17 @@ import pytest
 
 from src.core.types import (
     DatasetRef,
+    StageFailed,
     StageResult,
     StageStatus,
     build_dataset_ref,
     compute_schema_hash,
 )
 
-
 # ─────────────────────────────────────────────────────────────────
 # Fixtures / helpers
 # ─────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class FakeStageResult(StageResult):
@@ -49,15 +50,17 @@ def write_csv(path: Path, columns: list[str], rows: list[list[str]]) -> None:
 # StageResult.start / _OpenStage.finish
 # ─────────────────────────────────────────────────────────────────
 
-class TestStageResultTiming:
 
+class TestStageResultTiming:
     def test_finish_populates_stage_name_and_status(self):
         t0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         t1 = datetime(2026, 1, 1, 12, 0, 5, tzinfo=timezone.utc)
         clock = fake_clock([t0, t1])
 
         open_stage = StageResult.start("ingestion", clock=clock)
-        result = open_stage.finish(FakeStageResult, StageStatus.SUCCESS, items_processed=3)
+        result = open_stage.finish(
+            FakeStageResult, StageStatus.SUCCESS, items_processed=3
+        )
 
         assert result.stage_name == "ingestion"
         assert result.status == StageStatus.SUCCESS
@@ -81,7 +84,9 @@ class TestStageResultTiming:
         open_stage = StageResult.start("ingestion", clock=clock)
         result = open_stage.finish(FakeStageResult, StageStatus.SUCCESS)
 
-        assert datetime.fromisoformat(result.completed_at) > datetime.fromisoformat(result.started_at)
+        assert datetime.fromisoformat(result.completed_at) > datetime.fromisoformat(
+            result.started_at
+        )
 
     def test_finish_can_be_called_with_failed_status(self):
         t0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -89,7 +94,9 @@ class TestStageResultTiming:
         clock = fake_clock([t0, t1])
 
         open_stage = StageResult.start("ingestion", clock=clock)
-        result = open_stage.finish(FakeStageResult, StageStatus.FAILED, items_processed=1)
+        result = open_stage.finish(
+            FakeStageResult, StageStatus.FAILED, items_processed=1
+        )
 
         assert result.status == StageStatus.FAILED
         assert result.duration_seconds >= 0
@@ -127,7 +134,9 @@ class TestStageResultTiming:
         open_stage = StageResult.start("ingestion")
 
         with pytest.raises(TypeError):
-            open_stage.finish(FakeStageResult, StageStatus.SUCCESS, stage_name="collision")
+            open_stage.finish(
+                FakeStageResult, StageStatus.SUCCESS, stage_name="collision"
+            )
 
     def test_finish_missing_required_subclass_field_raises_type_error(self):
         # FakeStageResult's items_processed has a default (=0), so this
@@ -141,23 +150,31 @@ class TestStageResultTiming:
         open_stage = StageResult.start("ingestion")
 
         with pytest.raises(TypeError):
-            open_stage.finish(StrictFakeResult, StageStatus.SUCCESS)  # required_field omitted
+            open_stage.finish(
+                StrictFakeResult, StageStatus.SUCCESS
+            )  # required_field omitted
 
 
 # ─────────────────────────────────────────────────────────────────
 # compute_schema_hash
 # ─────────────────────────────────────────────────────────────────
 
-class TestComputeSchemaHash:
 
+class TestComputeSchemaHash:
     def test_same_columns_same_order_produce_same_hash(self):
-        assert compute_schema_hash(["a", "b", "c"]) == compute_schema_hash(["a", "b", "c"])
+        assert compute_schema_hash(["a", "b", "c"]) == compute_schema_hash(
+            ["a", "b", "c"]
+        )
 
     def test_same_columns_different_order_produce_same_hash(self):
-        assert compute_schema_hash(["a", "b", "c"]) == compute_schema_hash(["c", "a", "b"])
+        assert compute_schema_hash(["a", "b", "c"]) == compute_schema_hash(
+            ["c", "a", "b"]
+        )
 
     def test_different_columns_produce_different_hash(self):
-        assert compute_schema_hash(["a", "b", "c"]) != compute_schema_hash(["a", "b", "d"])
+        assert compute_schema_hash(["a", "b", "c"]) != compute_schema_hash(
+            ["a", "b", "d"]
+        )
 
     def test_empty_columns_does_not_raise(self):
         result = compute_schema_hash([])
@@ -185,11 +202,13 @@ class TestComputeSchemaHash:
 # build_dataset_ref — CSV
 # ─────────────────────────────────────────────────────────────────
 
-class TestBuildDatasetRefCsv:
 
+class TestBuildDatasetRefCsv:
     def test_counts_rows_excluding_header(self, tmp_path):
         path = tmp_path / "data.csv"
-        write_csv(path, columns=["id", "value"], rows=[["1", "a"], ["2", "b"], ["3", "c"]])
+        write_csv(
+            path, columns=["id", "value"], rows=[["1", "a"], ["2", "b"], ["3", "c"]]
+        )
 
         ref = build_dataset_ref(path)
 
@@ -281,8 +300,8 @@ class TestBuildDatasetRefCsv:
 # build_dataset_ref — unsupported formats
 # ─────────────────────────────────────────────────────────────────
 
-class TestBuildDatasetRefUnsupportedFormat:
 
+class TestBuildDatasetRefUnsupportedFormat:
     def test_raises_value_error_for_unsupported_extension(self, tmp_path):
         path = tmp_path / "data.txt"
         path.write_text("not a supported format")
@@ -321,16 +340,34 @@ class TestBuildDatasetRefUnsupportedFormat:
 # DatasetRef — plain dataclass behavior
 # ─────────────────────────────────────────────────────────────────
 
-class TestDatasetRefEquality:
 
+class TestDatasetRefEquality:
     def test_two_refs_with_same_fields_are_equal(self):
-        ref_a = DatasetRef(path=Path("data.csv"), row_count=5, schema_hash="abc", created_at="t")
-        ref_b = DatasetRef(path=Path("data.csv"), row_count=5, schema_hash="abc", created_at="t")
+        ref_a = DatasetRef(
+            path=Path("data.csv"), row_count=5, schema_hash="abc", created_at="t"
+        )
+        ref_b = DatasetRef(
+            path=Path("data.csv"), row_count=5, schema_hash="abc", created_at="t"
+        )
 
         assert ref_a == ref_b
 
     def test_refs_with_different_row_counts_are_not_equal(self):
-        ref_a = DatasetRef(path=Path("data.csv"), row_count=5, schema_hash="abc", created_at="t")
-        ref_b = DatasetRef(path=Path("data.csv"), row_count=6, schema_hash="abc", created_at="t")
+        ref_a = DatasetRef(
+            path=Path("data.csv"), row_count=5, schema_hash="abc", created_at="t"
+        )
+        ref_b = DatasetRef(
+            path=Path("data.csv"), row_count=6, schema_hash="abc", created_at="t"
+        )
 
         assert ref_a != ref_b
+
+
+class TestStageFailed:
+    def test_keeps_message_and_result(self) -> None:
+        result = StageResult.start("demo").finish(StageResult, StageStatus.FAILED)
+
+        exc = StageFailed("boom", result)
+
+        assert str(exc) == "boom"
+        assert exc.result is result

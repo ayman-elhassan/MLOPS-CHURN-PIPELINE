@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 import main
+from src.core.types import StageFailed, StageResult, StageStatus
 
 
 def write_config(path: Path, overrides: str = "") -> Path:
@@ -69,9 +70,13 @@ class TestLoadConfig:
             main.load_config(config_path)
 
     def test_rejects_unknown_configuration_key(self, tmp_path: Path) -> None:
-        config_path = write_config(tmp_path / "pipeline.yaml", "unknown_setting: true\n")
+        config_path = write_config(
+            tmp_path / "pipeline.yaml", "unknown_setting: true\n"
+        )
 
-        with pytest.raises(main.ConfigurationError, match="Extra inputs are not permitted"):
+        with pytest.raises(
+            main.ConfigurationError, match="Extra inputs are not permitted"
+        ):
             main.load_config(config_path)
 
     def test_rejects_invalid_split_total(self, tmp_path: Path) -> None:
@@ -87,7 +92,10 @@ class TestLoadConfig:
 
 class TestProjectPaths:
     def test_resolves_project_relative_path(self, tmp_path: Path) -> None:
-        assert main.resolve_project_path(tmp_path, Path("artifacts/runs")) == tmp_path / "artifacts/runs"
+        assert (
+            main.resolve_project_path(tmp_path, Path("artifacts/runs"))
+            == tmp_path / "artifacts/runs"
+        )
 
     def test_rejects_path_outside_project_root(self, tmp_path: Path) -> None:
         with pytest.raises(main.ConfigurationError, match="escapes the project root"):
@@ -95,7 +103,9 @@ class TestProjectPaths:
 
 
 class TestRunContext:
-    def test_creates_artifact_directory_and_provenance_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_creates_artifact_directory_and_provenance_files(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         config_path = write_config(tmp_path / "pipeline.yaml")
         config, digest = main.load_config(config_path)
         monkeypatch.setattr(main, "get_git_commit", lambda _: "abc123")
@@ -103,37 +113,51 @@ class TestRunContext:
         context = main.create_run_context(config, tmp_path, config_path, digest)
 
         assert context.artifact_dir.is_dir()
-        assert (context.artifact_dir / "pipeline.yaml").read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
-        metadata = json.loads((context.artifact_dir / "run_metadata.json").read_text(encoding="utf-8"))
+        assert (context.artifact_dir / "pipeline.yaml").read_text(
+            encoding="utf-8"
+        ) == config_path.read_text(encoding="utf-8")
+        metadata = json.loads(
+            (context.artifact_dir / "run_metadata.json").read_text(encoding="utf-8")
+        )
         assert metadata["run_id"] == context.run_id
         assert metadata["config_sha256"] == digest
         assert metadata["git_commit"] == "abc123"
 
 
 class TestMain:
-    def test_returns_zero_when_pipeline_completes(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_zero_when_pipeline_completes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         config_path = write_config(tmp_path / "pipeline.yaml")
         monkeypatch.setattr(main, "get_project_root", lambda: tmp_path)
         monkeypatch.setattr(main, "get_git_commit", lambda _: None)
-        monkeypatch.setattr(main, "run_pipeline", lambda config, context: {"status": "success"})
+        monkeypatch.setattr(
+            main, "run_pipeline", lambda config, context: {"status": "success"}
+        )
 
         exit_code = main.main(["--config", str(config_path)])
 
         assert exit_code == 0
 
-    def test_returns_two_for_configuration_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_two_for_configuration_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr(main, "get_project_root", lambda: tmp_path)
 
         exit_code = main.main(["--config", "missing.yaml"])
 
         assert exit_code == 2
 
-    def test_returns_one_when_pipeline_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_returns_one_when_pipeline_raises(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         config_path = write_config(tmp_path / "pipeline.yaml")
         monkeypatch.setattr(main, "get_project_root", lambda: tmp_path)
         monkeypatch.setattr(main, "get_git_commit", lambda _: None)
 
-        def fail_pipeline(config: main.PipelineConfig, context: main.RunContext) -> None:
+        def fail_pipeline(
+            config: main.PipelineConfig, context: main.RunContext
+        ) -> None:
             del config, context
             raise RuntimeError("training failed")
 
@@ -142,3 +166,23 @@ class TestMain:
         exit_code = main.main(["--config", str(config_path)])
 
         assert exit_code == 1
+
+    def test_returns_three_when_a_stage_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config_path = write_config(tmp_path / "pipeline.yaml")
+        monkeypatch.setattr(main, "get_project_root", lambda: tmp_path)
+        monkeypatch.setattr(main, "get_git_commit", lambda _: None)
+
+        def fail_stage(config: main.PipelineConfig, context: main.RunContext) -> None:
+            del config, context
+            result = StageResult.start("ingestion").finish(
+                StageResult, StageStatus.FAILED
+            )
+            raise StageFailed("1 of 1 item(s) failed", result)
+
+        monkeypatch.setattr(main, "run_pipeline", fail_stage)
+
+        exit_code = main.main(["--config", str(config_path)])
+
+        assert exit_code == 3

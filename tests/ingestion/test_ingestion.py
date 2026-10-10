@@ -2,11 +2,11 @@
 
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.core.types import StageStatus
+from src.core.types import StageFailed, StageStatus
 from src.ingestion.ingestion import (
     IngestionItem,
     IngestionResult,
@@ -311,6 +311,20 @@ class TestIngestionStageFailedResult:
             run(item, manifest_path)
 
         assert isinstance(exc_info.value.result, IngestionResult)
+
+    @patch("src.ingestion.ingestion.get_raw_data_path")
+    @patch("src.ingestion.ingestion.download_stream")
+    def test_exception_is_a_stage_failed(
+        self, mock_download: MagicMock, mock_path: MagicMock, tmp_path: Path
+    ) -> None:
+        mock_path.return_value = tmp_path / "data.zip"
+        mock_download.side_effect = ConnectionError("network unreachable")
+
+        with pytest.raises(StageFailed) as exc_info:
+            run(make_item("data.zip"), tmp_path / "manifest.jsonl")
+
+        assert isinstance(exc_info.value, IngestionStageFailed)
+        assert exc_info.value.result.stage_name == "ingestion"
 
 
 # ─────────────────────────────────────────────────────────────────
