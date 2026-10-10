@@ -38,6 +38,12 @@ Containerization, experiment tracking, and deployment are planned for after the 
 
 `python main.py` runs ingestion for real, then stops with an error and exit code 1. This is intentional: the later stages are not implemented yet, and a partial run must not be mistaken for a complete one.
 
+## Dataset
+
+The pipeline is built around IBM's Telco Customer Churn sample dataset, a public CSV where each row is a telecom customer and the target column is `Churn`. The source URL, filename, and expected SHA-256 are set in `config/pipeline.yaml`, and ingestion verifies the download against that hash before anything else runs.
+
+The data is not stored in this repository. It is downloaded on each run and kept out of version control.
+
 ## Quick start
 
 ```bash
