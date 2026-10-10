@@ -1,10 +1,9 @@
 """Ingestion stage orchestrator.
 
-Sequences the per-item ingestion flow: resolve a destination path,
-download, hash, verify against an expected hash, and record every
-outcome in the manifest. One bad item does not abort the batch — all
-items are attempted, and failures are only surfaced as a single
-summary exception once the whole batch has been processed.
+Sequences the ingestion flow for one item: resolve a destination path,
+download, hash, verify against an expected hash, and record the outcome
+in the manifest. Failures are recorded and then surfaced as a single
+IngestionStageFailed exception carrying the finalized IngestionResult.
 """
 
 import logging
@@ -74,28 +73,20 @@ class IngestionResult(StageResult):
 
 
 def run(item: IngestionItem, manifest_path: Path) -> IngestionResult:
-    """Runs the full ingestion stage: verifies every
-    item listed in config, recording each outcome in the
-    manifest at manifest_path.
+    """Runs the ingestion stage for one item, recording the outcome in
+    the manifest at manifest_path.
 
     Args:
-        IngestionItem: config dictionary listing items to ingest.
-            Each item is expected to provide url, filename, and
-            expected_hash.
+        item: the file to fetch and verify.
         manifest_path: Path to the manifest JSONL file to log into.
 
     Returns:
-        An IngestionResult summarizing which items succeeded and
-        which failed or came back corrupt.
+        An IngestionResult describing the verified item.
 
     Raises:
-        ValueError: if config has no "items" key. Raised before any
-            timing/stage-result machinery starts, since this is a
-            precondition failure, not a failed stage attempt — no
-            ingestion work was ever tried.
-        IngestionStageFailed: if one or more items failed or were
-            corrupt. Raised only after every item has been attempted,
-            and carries the finalized IngestionResult via .result.
+        IngestionStageFailed: if the item failed or came back corrupt.
+            Raised only after the outcome is recorded, and carries the
+            finalized IngestionResult via .result.
     """
 
     # Timing starts only now — after we know there's a legitimate
