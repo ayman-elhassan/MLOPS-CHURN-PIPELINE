@@ -19,6 +19,19 @@ from src.utils.ingest import calculate_sha256, download_stream
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class IngestionItem:
+    """Everything ingestion needs to fetch and verify one file.
+
+    Owned by ingestion: the orchestrator adapts the outside world into this
+    shape, not the other way around.
+    """
+
+    url: str
+    filename: str
+    expected_sha256: str
+
+
 class IngestionStageFailed(Exception):
     """Raised after a full ingestion run if one or more items failed
     or came back corrupt. Individual failures are already recorded in
@@ -60,13 +73,13 @@ class IngestionResult(StageResult):
         return len(self.succeeded) + len(self.failed)
 
 
-def run(config: dict, manifest_path: Path) -> IngestionResult:
+def run(item: IngestionItem, manifest_path: Path) -> IngestionResult:
     """Runs the full ingestion stage: verifies every
     item listed in config, recording each outcome in the
     manifest at manifest_path.
 
     Args:
-        config: config dictionary listing items to ingest.
+        IngestionItem: config dictionary listing items to ingest.
             Each item is expected to provide url, filename, and
             expected_hash.
         manifest_path: Path to the manifest JSONL file to log into.
@@ -84,8 +97,6 @@ def run(config: dict, manifest_path: Path) -> IngestionResult:
             corrupt. Raised only after every item has been attempted,
             and carries the finalized IngestionResult via .result.
     """
-    if "items" not in config:
-        raise ValueError(f"Config at {config} has no 'items' key")
 
     # Timing starts only now — after we know there's a legitimate
     # batch to actually attempt, not before input validation.
@@ -96,12 +107,11 @@ def run(config: dict, manifest_path: Path) -> IngestionResult:
     succeeded: list[IngestionItemResult] = []
     failed: list[IngestionItemResult] = []
 
-    for item in config["items"]:
-        item_result = _ingest_one_item(item, manifest)
-        if item_result.status == "verified":
-            succeeded.append(item_result)
-        else:
-            failed.append(item_result)
+    item_result = _ingest_one_item(item, manifest)
+    if item_result.status == "verified":
+        succeeded.append(item_result)
+    else:
+        failed.append(item_result)
 
     result = open_stage.finish(
         IngestionResult,
@@ -119,7 +129,9 @@ def run(config: dict, manifest_path: Path) -> IngestionResult:
     return result
 
 
-def _ingest_one_item(item: dict, manifest: IngestionManifest) -> IngestionItemResult:
+def _ingest_one_item(
+    item: IngestionItem, manifest: IngestionManifest
+) -> IngestionItemResult:
     """Downloads, hashes, and verifies a single configured item,
     recording the outcome in the manifest. Never raises — any
     failure is caught, logged to the manifest, and reflected in the
@@ -139,14 +151,10 @@ def _ingest_one_item(item: dict, manifest: IngestionManifest) -> IngestionItemRe
     run_id: str | None = None
 
     try:
-        url = item["url"]
-        filename = item["filename"]
-        expected_hash = item["expected_hash"]
+        run_id = manifest.start_run(item.url, Path(item.filename))
 
-        run_id = manifest.start_run(url, Path(filename))
-
-        output_path = get_raw_data_path(filename)
-        download_stream(url, output_path)
+        output_path = get_raw_data_path(item.filename)
+        download_stream(item.url, output_path)
         actual_hash = calculate_sha256(output_path)
         file_size_bytes = output_path.stat().st_size
 
@@ -155,15 +163,15 @@ def _ingest_one_item(item: dict, manifest: IngestionManifest) -> IngestionItemRe
         # config author may reasonably write an uppercase expected_hash).
         # Without normalizing, an otherwise-correct file would be
         # falsely marked corrupt purely due to letter casing.
-        if actual_hash.lower() == expected_hash.lower():
+        if actual_hash.lower() == item.expected_sha256.lower():
             manifest.log_success(run_id, actual_hash, file_size_bytes)
             return IngestionItemResult(
-                filename=filename, url=url, run_id=run_id, status="verified"
+                filename=item.filename, url=item.url, run_id=run_id, status="verified"
             )
 
-        manifest.log_corrupt(run_id, actual_hash, file_size_bytes, expected_hash)
+        manifest.log_corrupt(run_id, actual_hash, file_size_bytes, item.expected_sha256)
         return IngestionItemResult(
-            filename=filename, url=url, run_id=run_id, status="corrupt"
+            filename=item.filename, url=item.url, run_id=run_id, status="corrupt"
         )
 
     except Exception as e:
@@ -191,14 +199,9 @@ def _ingest_one_item(item: dict, manifest: IngestionManifest) -> IngestionItemRe
                 error_message,
             )
 
-        # item may not even be a dict at this point (e.g. config["items"]
-        # was itself malformed, like a dict instead of a list, making
-        # each "item" a plain string) — guard the fallback lookup so
-        # building this failure result can never itself raise.
-        safe_get = item.get if isinstance(item, dict) else (lambda _key, default: default)
         return IngestionItemResult(
-            filename=safe_get("filename", "<unknown>"),
-            url=safe_get("url", "<unknown>"),
+            filename=item.filename,
+            url=item.url,
             run_id=run_id or "unset",
             status="failed",
             error=error_message,
