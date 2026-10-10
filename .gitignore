@@ -33,3 +33,6 @@ data/
 # temp test files
 .coverage
 .dmypy.json
+
+#artifacts
+artifacts/
