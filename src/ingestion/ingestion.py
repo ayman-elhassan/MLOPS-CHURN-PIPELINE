@@ -86,8 +86,8 @@ def run(item: IngestionItem, manifest_path: Path) -> IngestionResult:
             finalized IngestionResult via .result.
     """
 
-    # Timing starts only now — after we know there's a legitimate
-    # batch to actually attempt, not before input validation.
+    # Timing starts here. The typed IngestionItem needs no structural
+    # precondition checks, so everything from here on counts as stage work.
     open_stage = StageResult.start("ingestion")
 
     manifest = IngestionManifest(manifest_path)
@@ -120,22 +120,16 @@ def run(item: IngestionItem, manifest_path: Path) -> IngestionResult:
 def _ingest_one_item(
     item: IngestionItem, manifest: IngestionManifest
 ) -> IngestionItemResult:
-    """Downloads, hashes, and verifies a single configured item,
-    recording the outcome in the manifest. Never raises — any
-    failure is caught, logged to the manifest, and reflected in the
-    returned IngestionItemResult instead, so one bad item cannot
-    abort the rest of the batch.
-
-    This includes malformed items (missing url/filename/expected_hash)
-    — those are now caught here too, not just failures during
-    download/hash/verify, since the required-key lookups and
-    manifest.start_run() happen inside the same try block as
-    everything else.
+    """Downloads, hashes, and verifies the item, recording the outcome
+    in the manifest. Never raises — any failure (including
+    manifest.start_run() itself) is caught, logged to the manifest where
+    possible, and reflected in the returned IngestionItemResult instead,
+    so run() can always finalize an IngestionResult and raise
+    IngestionStageFailed from it.
     """
-    # run_id may never get assigned if the item itself is malformed
-    # (missing a required key) or if start_run fails before a real
-    # attempt begins — initialized here so the except block below can
-    # tell whether a manifest entry was ever opened at all.
+    # run_id stays None if start_run itself fails — initialized here so
+    # the except block below can tell whether a manifest entry was ever
+    # opened at all.
     run_id: str | None = None
 
     try:
@@ -148,7 +142,7 @@ def _ingest_one_item(
 
         # Compared case-insensitively: hex digests have no case-sensitive
         # meaning (hashlib.hexdigest() always returns lowercase, but a
-        # config author may reasonably write an uppercase expected_hash).
+        # config author may reasonably write an uppercase expected_sha256).
         # Without normalizing, an otherwise-correct file would be
         # falsely marked corrupt purely due to letter casing.
         if actual_hash.lower() == item.expected_sha256.lower():
@@ -170,7 +164,7 @@ def _ingest_one_item(
                 manifest.log_failure(run_id, error_message)
             except Exception:
                 # Logging the failure itself failed (e.g. disk full). Don't
-                # let that mask the original error or crash the batch —
+                # let that mask the original error or crash the stage —
                 # fall back to plain logging so it's still visible somewhere.
                 logger.critical(
                     "Failed to record manifest entry for run_id=%s (original error: %s)",
@@ -179,9 +173,8 @@ def _ingest_one_item(
                     exc_info=True,
                 )
         else:
-            # No run was ever started (the item failed before or during
-            # manifest.start_run — e.g. a missing required key), so
-            # there's no manifest entry to attach this failure to.
+            # No run was ever started (manifest.start_run itself failed),
+            # so there's no manifest entry to attach this failure to.
             logger.error(
                 "Item failed before a run could be started (original error: %s)",
                 error_message,
