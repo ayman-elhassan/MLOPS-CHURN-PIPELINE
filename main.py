@@ -14,7 +14,7 @@ import json
 import logging
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -197,12 +197,12 @@ def create_run_context(
 ) -> RunContext:
     """Create a unique run directory and the metadata that identifies it."""
     artifact_root = resolve_project_path(project_root, config.artifacts.directory)
-    run_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}-{uuid4().hex[:8]}"
+    run_id = f"{datetime.now(UTC):%Y%m%dT%H%M%SZ}-{uuid4().hex[:8]}"
     artifact_dir = artifact_root / run_id
     artifact_dir.mkdir(parents=True, exist_ok=False)
     context = RunContext(
         run_id=run_id,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         project_root=project_root,
         config_path=config_path,
         config_sha256=config_sha256,
