@@ -72,7 +72,7 @@ A config-driven, reproducible customer-churn pipeline built on IBM's Telco Custo
 1. How does the verified raw file reach stage 2? (A) `IngestionResult` carries a `DatasetRef`; (B) the orchestrator builds the `DatasetRef` after ingestion succeeds. Leaning B: it keeps ingestion small and the stage-to-stage wiring in one place. Caveat found in code: `pipeline.py` currently discards ingestion's return value, and `IngestionItemResult` holds the filename but not the resolved output path. Under B, `pipeline.py` would have to rebuild `data/raw/<filename>` itself, a second place that knows where ingestion writes. Option C: add `path: Path` to `IngestionItemResult`, and have the orchestrator call `build_dataset_ref(result.succeeded[0].path)`. Decide, then record it as ADR 0007.
 2. Scope: structure only (required columns present, target among them) or also types? Leaning structure only. `SchemaConfig` already has `target_column` and `required_columns`, so structure-only needs no new config fields; types would. Note `config/pipeline.yaml` lists only `customerID` and `Churn` as required, so a structure check would pass a file missing most feature columns; decide whether to list every column later stages need.
 3. Extra columns beyond the required ones: allow, warn, or reject? Read only the CSV header or the whole file? (`build_dataset_ref` already reads the whole file to count rows.)
-4. Failure type: `SchemaValidationFailed(StageFailed)`, which gives exit code 3 for free.
+4. Failure type: `SchemaValidationStageFailed(StageFailed)` (named to match `IngestionStageFailed`), which gives exit code 3 for free.
 
 ## Known loose ends
 
