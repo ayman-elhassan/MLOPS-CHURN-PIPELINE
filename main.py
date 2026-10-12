@@ -215,9 +215,17 @@ def create_run_context(
 
 def write_run_metadata(context: RunContext) -> None:
     """Preserve the effective config and immutable identifiers for this run."""
-    config_copy_path = context.artifact_dir / "pipeline.yaml"
-    config_copy_path.write_text(
-        context.config_path.read_text(encoding="utf-8"), encoding="utf-8"
+    config_text = context.config_path.read_text(encoding="utf-8")
+    actual_sha256 = hashlib.sha256(config_text.encode("utf-8")).hexdigest()
+    if actual_sha256 != context.config_sha256:
+        raise ConfigurationError(
+            f"Configuration file changed while the run was starting: "
+            f"{context.config_path}"
+        )
+    # newline="\n" keeps the saved bytes identical to what was hashed,
+    # so sha256(pipeline.yaml in the artifact folder) == config_sha256.
+    (context.artifact_dir / "pipeline.yaml").write_text(
+        config_text, encoding="utf-8", newline="\n"
     )
     metadata = {
         "run_id": context.run_id,
