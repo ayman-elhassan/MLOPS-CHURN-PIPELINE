@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -122,6 +123,32 @@ class TestRunContext:
         assert metadata["run_id"] == context.run_id
         assert metadata["config_sha256"] == digest
         assert metadata["git_commit"] == "abc123"
+
+    def test_config_copy_hashes_to_recorded_digest(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config_path = write_config(tmp_path / "pipeline.yaml")
+        config, digest = main.load_config(config_path)
+        monkeypatch.setattr(main, "get_git_commit", lambda _: None)
+
+        context = main.create_run_context(config, tmp_path, config_path, digest)
+
+        copy_bytes = (context.artifact_dir / "pipeline.yaml").read_bytes()
+        assert hashlib.sha256(copy_bytes).hexdigest() == digest
+
+    def test_rejects_config_changed_after_hashing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        config_path = write_config(tmp_path / "pipeline.yaml")
+        config, digest = main.load_config(config_path)
+        monkeypatch.setattr(main, "get_git_commit", lambda _: None)
+        config_path.write_text(
+            config_path.read_text(encoding="utf-8") + "# edited\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(main.ConfigurationError, match="changed"):
+            main.create_run_context(config, tmp_path, config_path, digest)
 
 
 class TestMain:
