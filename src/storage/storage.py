@@ -1,12 +1,9 @@
 from pathlib import Path
 
-from pathlib import Path
-from typing import Optional
-
 
 def get_project_root(
     anchor_file: str = "requirements.txt",
-    start: Optional[Path] = None,
+    start: Path | None = None,
 ) -> Path:
     """Returns the absolute Path to the project root directory.
 
@@ -41,15 +38,13 @@ def get_project_root(
     )
 
 
-
-
 def ensure_dir_exists(dir_path: Path) -> Path:
     """Guarantees that a directory path exists on disk,
     creating it if needed.
-    
+
     input: dir_path (Path): The path to the directory
     to ensure exists
-    
+
     output: Path object to the directory
     """
     if dir_path.exists() and not dir_path.is_dir():
@@ -60,12 +55,10 @@ def ensure_dir_exists(dir_path: Path) -> Path:
     return dir_path
 
 
-
 def get_raw_data_path(filename: str = "") -> Path:
-
     """
     Returns the full target Path for a file inside data/raw/, ensuring the directory exists.
-    
+
     input: filename (str): The name of the file to get the path for
     output: Path object to the file
     """
@@ -75,6 +68,3 @@ def get_raw_data_path(filename: str = "") -> Path:
     if not target.is_relative_to(raw_data_dir.resolve()):
         raise ValueError(f"filename escapes the raw data directory: {filename}")
     return target
-
-
-
