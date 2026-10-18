@@ -16,10 +16,10 @@ import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
 T = TypeVar("T", bound="StageResult")
 
@@ -38,7 +38,7 @@ def _resolve_clock(clock: Callable[[], datetime] | None) -> datetime:
     this module that needs "now" (with or without an injected clock)
     calls this instead of repeating the same fallback inline.
     """
-    active_clock = clock or (lambda: datetime.now(timezone.utc))
+    active_clock = clock or (lambda: datetime.now(UTC))
     return active_clock()
 
 
@@ -112,7 +112,7 @@ class _OpenStage:
     started_at_dt: datetime
     clock: Callable[[], datetime] | None = None
 
-    def finish(self, result_cls: type[T], status: StageStatus, **fields) -> T:
+    def finish(self, result_cls: type[T], status: StageStatus, **fields: Any) -> T:
         """Finalizes a stage run, producing a populated result instance.
 
         Args:
@@ -162,7 +162,8 @@ class DatasetRef:
     """A lightweight, independently-checkable handle to a dataset a
     stage produced, passed forward to whichever stage runs next.
 
-    Carrying row_count and schema_hash alongside the path lets a
+    Carrying row_count and schema_hash alongside the path and
+    `columns` keeps file order, while `schema_hash` ignores order. lets a
     downstream stage sanity-check what it received (e.g. reject a
     zero-row dataset, or a schema fingerprint that doesn't match what
     it was told to expect) without re-reading the whole file just to
@@ -179,6 +180,7 @@ class DatasetRef:
     row_count: int
     schema_hash: str
     created_at: str
+    columns: tuple[str, ...]
 
 
 def _read_header_and_count_csv(path: Path) -> tuple[list[str], int]:
@@ -257,4 +259,5 @@ def build_dataset_ref(
         row_count=row_count,
         schema_hash=compute_schema_hash(column_names),
         created_at=_now(clock),
+        columns=tuple(column_names),
     )
