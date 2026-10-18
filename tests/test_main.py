@@ -90,6 +90,17 @@ class TestLoadConfig:
         with pytest.raises(main.ConfigurationError, match="must sum to 1.0"):
             main.load_config(config_path)
 
+    def test_rejects_target_not_in_required_columns(self, tmp_path: Path) -> None:
+        config_path = write_config(
+            tmp_path / "pipeline.yaml",
+            "schema:\n  target_column: Chrn\n  required_columns: [customerID, Churn]\n",
+        )
+
+        with pytest.raises(
+            main.ConfigurationError, match="must be one of required_columns"
+        ):
+            main.load_config(config_path)
+
 
 class TestProjectPaths:
     def test_resolves_project_relative_path(self, tmp_path: Path) -> None:

@@ -56,6 +56,14 @@ class SchemaConfig(BaseModel):
     target_column: str = Field(min_length=1)
     required_columns: list[str] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def target_must_be_required(self) -> SchemaConfig:
+        if self.target_column not in self.required_columns:
+            raise ValueError(
+                f"target_column {self.target_column!r} must be one of required_columns"
+            )
+        return self
+
 
 class SplitConfig(BaseModel):
     """Reproducible proportions used to split the cleaned dataset."""
