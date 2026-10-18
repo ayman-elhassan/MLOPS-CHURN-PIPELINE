@@ -64,6 +64,21 @@ class SchemaConfig(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def required_columns_must_be_unique(self) -> SchemaConfig:
+        if len(self.required_columns) != len(set(self.required_columns)):
+            duplicates = [
+                col
+                for col in self.required_columns
+                if self.required_columns.count(col) > 1
+            ]
+            unique_duplicates = list(dict.fromkeys(duplicates))
+            raise ValueError(
+                "required_columns must not contain duplicates: "
+                + ", ".join(unique_duplicates)
+            )
+        return self
+
 
 class SplitConfig(BaseModel):
     """Reproducible proportions used to split the cleaned dataset."""

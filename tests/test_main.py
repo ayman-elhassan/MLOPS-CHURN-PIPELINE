@@ -101,6 +101,19 @@ class TestLoadConfig:
         ):
             main.load_config(config_path)
 
+    def test_rejects_duplicate_required_columns(self, tmp_path: Path) -> None:
+        config_path = write_config(
+            tmp_path / "pipeline.yaml",
+            "schema:\n"
+            "  target_column: Churn\n"
+            "  required_columns: [customerID, Churn, Churn, customerID]\n",
+        )
+
+        with pytest.raises(
+            main.ConfigurationError, match="duplicates: customerID, Churn"
+        ):
+            main.load_config(config_path)
+
 
 class TestProjectPaths:
     def test_resolves_project_relative_path(self, tmp_path: Path) -> None:
