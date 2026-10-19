@@ -24,3 +24,6 @@ files = ["main.py", "src"]
 
 [tool.ruff]
 target-version = "py312"
+
+[tool.coverage.report]
+skip_empty = true
