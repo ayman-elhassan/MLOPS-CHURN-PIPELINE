@@ -1,6 +1,6 @@
 # 0007. Stages hand off typed values: ingestion publishes verified-file facts, stage 2 builds the DatasetRef
 
-- Status: Accepted. One provisional item: the exact form of the ingestion output (Decision 1). Confirm it before changing ingestion.
+- Status: Accepted.
 - Date: 2026-10
 
 ## Context
@@ -11,7 +11,7 @@
 
 ## Decision
 
-1. Ingestion exposes verified-file facts (path, SHA-256, size in bytes) as a small frozen type owned by ingestion. It is carried on `IngestionResult` in an optional field that is set only when the file is verified. [provisional]
+1. Ingestion exposes verified-file facts (path, SHA-256, size in bytes) as a small frozen type owned by ingestion. It is carried on `IngestionResult` in an optional field that is set only when the file is verified.
 2. `pipeline.py` maps those facts and the config values into stage 2's own frozen input (flat fields; `required_columns` as a tuple). Stage 2 imports neither ingestion nor the config schema.
 3. Stage 2 builds the `DatasetRef` by calling `build_dataset_ref` and returns it on its result for stage 3. Ingestion never parses the CSV.
 4. `DatasetRef` gains `columns: tuple[str, ...]` and becomes frozen.

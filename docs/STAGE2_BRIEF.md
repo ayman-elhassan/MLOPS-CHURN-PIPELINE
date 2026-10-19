@@ -28,7 +28,7 @@ FLAGGED (approved defaults to re-review with the assistant BEFORE the step that 
 
 | ID | Default | Main alternative | What would flip it | Revisit before |
 |---|---|---|---|---|
-| F1 | Ingestion exposes facts as an ingestion-owned success-only frozen type on `IngestionResult` (confidence low-medium) | Flat path/sha256/size fields on `IngestionItemResult` (option G) | Owner wants the smallest diff; `IngestionResult` gets flattened | Step 3 |
+| F1 | Ingestion exposes facts as an ingestion-owned success-only frozen type on `IngestionResult` (confidence low-medium) | Flat path/sha256/size fields on `IngestionItemResult` (option G) | Owner wants the smallest diff; `IngestionResult` gets flattened | Step 3 (confirmed: option A) |
 | F2 | `DatasetRef` gains `columns` (tuple) and is frozen | Keep it as is and return names separately | A reason not to touch the shared type | Step 2 |
 | F3 | One reader: stage 2 uses only `build_dataset_ref`; BOM, blank-line count and error translation deferred | Stage-owned header reader | `row_count` made lazy; BOM files appear sooner than expected | Step 5 |
 | F4 | `required_columns` lists all 21 columns now; allowlist field deferred; rule recorded | Minimal list plus a separate `feature_columns` field now | Listing 21 names becomes a burden | Step 1 |
