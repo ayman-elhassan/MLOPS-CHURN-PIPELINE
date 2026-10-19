@@ -37,8 +37,8 @@ def make_item(name: str, expected_sha256: str = "MATCH") -> IngestionItem:
 
 class TestManifestConstructionFailure:
     def test_manifest_parent_path_is_a_file_raises_not_a_directory_error(
-        self, tmp_path
-    ):
+        self, tmp_path: Path
+    ) -> None:
         # If manifest_path's parent already exists as a plain file (not
         # a directory), IngestionManifest's own ensure_dir_exists call
         # raises NotADirectoryError. This happens before any item is
@@ -62,8 +62,12 @@ class TestSingleItemOutcomes:
     @patch("src.ingestion.ingestion.calculate_sha256")
     @patch("src.ingestion.ingestion.download_stream")
     def test_success_writes_verified_entry_and_returns_no_failure(
-        self, mock_download, mock_hash, mock_path, tmp_path
-    ):
+        self,
+        mock_download: MagicMock,
+        mock_hash: MagicMock,
+        mock_path: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         output_file = tmp_path / "data.zip"
         output_file.write_bytes(b"real content")
         mock_path.return_value = output_file
@@ -87,8 +91,12 @@ class TestSingleItemOutcomes:
     @patch("src.ingestion.ingestion.calculate_sha256")
     @patch("src.ingestion.ingestion.download_stream")
     def test_hash_mismatch_writes_corrupt_entry_and_raises(
-        self, mock_download, mock_hash, mock_path, tmp_path
-    ):
+        self,
+        mock_download: MagicMock,
+        mock_hash: MagicMock,
+        mock_path: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         output_file = tmp_path / "data.zip"
         output_file.write_bytes(b"wrong content")
         mock_path.return_value = output_file
@@ -109,8 +117,12 @@ class TestSingleItemOutcomes:
     @patch("src.ingestion.ingestion.calculate_sha256")
     @patch("src.ingestion.ingestion.download_stream")
     def test_hash_match_with_different_case_is_treated_as_verified(
-        self, mock_download, mock_hash, mock_path, tmp_path
-    ):
+        self,
+        mock_download: MagicMock,
+        mock_hash: MagicMock,
+        mock_path: MagicMock,
+        tmp_path: Path,
+    ) -> None:
         # actual and expected hashes are compared case-insensitively. A
         # hash that matches except for letter case is a genuine match,
         # not corruption.
@@ -127,12 +139,14 @@ class TestSingleItemOutcomes:
         assert result.succeeded[0].status == "verified"
         entries = read_manifest_entries(manifest_path)
         assert entries[0]["status"] == "verified"
+        assert result.verified_file is not None
+        assert result.verified_file.sha256 == "abcdef0123"
 
     @patch("src.ingestion.ingestion.get_raw_data_path")
     @patch("src.ingestion.ingestion.download_stream")
     def test_download_failure_writes_failed_entry_and_raises(
-        self, mock_download, mock_path, tmp_path
-    ):
+        self, mock_download: MagicMock, mock_path: MagicMock, tmp_path: Path
+    ) -> None:
         output_file = tmp_path / "data.zip"
         mock_path.return_value = output_file
         mock_download.side_effect = ConnectionError("network unreachable")
@@ -150,8 +164,8 @@ class TestSingleItemOutcomes:
     @patch("src.ingestion.ingestion.get_raw_data_path")
     @patch("src.ingestion.ingestion.download_stream")
     def test_missing_output_file_after_download_raises_file_not_found(
-        self, mock_download, mock_path, tmp_path
-    ):
+        self, mock_download: MagicMock, mock_path: MagicMock, tmp_path: Path
+    ) -> None:
         # download_stream is mocked to a no-op, so output_path is never
         # actually created. calculate_sha256 (unmocked here) then tries
         # to open a file that doesn't exist — caught by _ingest_one_item's
@@ -171,8 +185,8 @@ class TestSingleItemOutcomes:
 
     @patch("src.ingestion.ingestion.get_raw_data_path")
     def test_path_traversal_in_filename_is_treated_as_item_failure(
-        self, mock_path, tmp_path
-    ):
+        self, mock_path: MagicMock, tmp_path: Path
+    ) -> None:
         # get_raw_data_path's own guard raises ValueError — confirm it's
         # caught and recorded like any other failure, not left to crash.
         mock_path.side_effect = ValueError("filename escapes the raw data directory")
@@ -188,6 +202,62 @@ class TestSingleItemOutcomes:
         assert entries[0]["status"] == "failed"
         assert "escapes the raw data directory" in entries[0]["error"]
 
+    @patch("src.ingestion.ingestion.get_raw_data_path")
+    @patch("src.ingestion.ingestion.calculate_sha256")
+    @patch("src.ingestion.ingestion.download_stream")
+    def test_verified_run_exposes_facts_about_the_saved_file(
+        self,
+        mock_download: MagicMock,
+        mock_hash: MagicMock,
+        mock_path: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        content = b"real content"
+        output_file = tmp_path / "data.zip"
+        output_file.write_bytes(content)
+        mock_path.return_value = output_file
+        mock_hash.return_value = "MATCH"
+
+        result = run(make_item("data.zip", "MATCH"), tmp_path / "manifest.jsonl")
+
+        assert result.verified_file is not None
+        assert result.verified_file.path == output_file
+        assert result.verified_file.sha256 == "MATCH"
+        assert result.verified_file.size_bytes == len(content)
+
+    @patch("src.ingestion.ingestion.get_raw_data_path")
+    @patch("src.ingestion.ingestion.calculate_sha256")
+    @patch("src.ingestion.ingestion.download_stream")
+    def test_corrupt_file_has_no_verified_file(
+        self,
+        mock_download: MagicMock,
+        mock_hash: MagicMock,
+        mock_path: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        output_file = tmp_path / "data.zip"
+        output_file.write_bytes(b"wrong content")
+        mock_path.return_value = output_file
+        mock_hash.return_value = "ACTUAL_HASH"
+
+        with pytest.raises(IngestionStageFailed) as exc_info:
+            run(make_item("data.zip", "EXPECTED_HASH"), tmp_path / "manifest.jsonl")
+
+        assert exc_info.value.result.verified_file is None
+
+    @patch("src.ingestion.ingestion.get_raw_data_path")
+    @patch("src.ingestion.ingestion.download_stream")
+    def test_failed_download_has_no_verified_file(
+        self, mock_download: MagicMock, mock_path: MagicMock, tmp_path: Path
+    ) -> None:
+        mock_path.return_value = tmp_path / "data.zip"
+        mock_download.side_effect = ConnectionError("network unreachable")
+
+        with pytest.raises(IngestionStageFailed) as exc_info:
+            run(make_item("data.zip"), tmp_path / "manifest.jsonl")
+
+        assert exc_info.value.result.verified_file is None
+
 
 # ─────────────────────────────────────────────────────────────────
 # Failure before a manifest run exists
@@ -196,8 +266,8 @@ class TestSingleItemOutcomes:
 
 class TestFailureBeforeRunStarts:
     def test_start_run_failure_is_recorded_as_failed_item_with_unset_run_id(
-        self, tmp_path, caplog
-    ):
+        self, tmp_path: Path, caplog: MagicMock
+    ) -> None:
         # If manifest.start_run itself fails, no manifest entry was ever
         # opened, so there is nothing to attach the failure to. The item
         # is reported as failed with run_id "unset" and the error is
@@ -232,9 +302,13 @@ class TestStageResultFields:
     @patch("src.ingestion.ingestion.calculate_sha256")
     @patch("src.ingestion.ingestion.download_stream")
     def test_successful_run_reports_success_status_and_stage_name(
-        self, mock_download, mock_hash, mock_path, tmp_path
-    ):
-        def fake_path(filename):
+        self,
+        mock_download: MagicMock,
+        mock_hash: MagicMock,
+        mock_path: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        def fake_path(filename: str) -> Path:
             path = tmp_path / filename
             path.write_bytes(b"content")
             return path
@@ -254,9 +328,13 @@ class TestStageResultFields:
     @patch("src.ingestion.ingestion.calculate_sha256")
     @patch("src.ingestion.ingestion.download_stream")
     def test_successful_run_has_sane_timestamps_and_duration(
-        self, mock_download, mock_hash, mock_path, tmp_path
-    ):
-        def fake_path(filename):
+        self,
+        mock_download: MagicMock,
+        mock_hash: MagicMock,
+        mock_path: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        def fake_path(filename: str) -> Path:
             path = tmp_path / filename
             path.write_bytes(b"content")
             return path
@@ -274,7 +352,9 @@ class TestStageResultFields:
 
     @patch("src.ingestion.ingestion.get_raw_data_path")
     @patch("src.ingestion.ingestion.download_stream")
-    def test_failed_run_reports_failed_status(self, mock_download, mock_path, tmp_path):
+    def test_failed_run_reports_failed_status(
+        self, mock_download: MagicMock, mock_path: MagicMock, tmp_path: Path
+    ) -> None:
         output_file = tmp_path / "data.zip"
         mock_path.return_value = output_file
         mock_download.side_effect = ConnectionError("network unreachable")
@@ -298,8 +378,8 @@ class TestIngestionStageFailedResult:
     @patch("src.ingestion.ingestion.get_raw_data_path")
     @patch("src.ingestion.ingestion.download_stream")
     def test_result_is_a_real_ingestion_result_instance(
-        self, mock_download, mock_path, tmp_path
-    ):
+        self, mock_download: MagicMock, mock_path: MagicMock, tmp_path: Path
+    ) -> None:
         output_file = tmp_path / "data.zip"
         mock_path.return_value = output_file
         mock_download.side_effect = ConnectionError("network unreachable")
@@ -336,8 +416,12 @@ class TestManifestLoggingFailureFallback:
     @patch("src.ingestion.ingestion.get_raw_data_path")
     @patch("src.ingestion.ingestion.download_stream")
     def test_does_not_crash_or_mask_original_error_when_manifest_write_also_fails(
-        self, mock_download, mock_path, tmp_path, caplog
-    ):
+        self,
+        mock_download: MagicMock,
+        mock_path: MagicMock,
+        tmp_path: Path,
+        caplog: MagicMock,
+    ) -> None:
         output_file = tmp_path / "data.zip"
         mock_path.return_value = output_file
         mock_download.side_effect = ConnectionError("network unreachable")

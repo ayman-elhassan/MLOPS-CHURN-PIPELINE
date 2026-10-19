@@ -46,6 +46,18 @@ class IngestionStageFailed(StageFailed):
         super().__init__(message, result)
 
 
+@dataclass(frozen=True)
+class VerifiedFile:
+    """Facts about a raw file whose SHA-256 matched the pinned value.
+
+    Exists only for a verified file, so every field is always filled in.
+    """
+
+    path: Path
+    sha256: str
+    size_bytes: int
+
+
 @dataclass
 class IngestionItemResult:
     """The outcome of ingesting a single configured item."""
@@ -59,10 +71,15 @@ class IngestionItemResult:
 
 @dataclass
 class IngestionResult(StageResult):
-    """The outcome of one full ingestion stage run."""
+    """The outcome of one full ingestion stage run.
+
+    `verified_file` is set only when the file passed verification, so it is
+    None on a failed run.
+    """
 
     succeeded: list[IngestionItemResult] = field(default_factory=list)
     failed: list[IngestionItemResult] = field(default_factory=list)
+    verified_file: VerifiedFile | None = None
 
     @property
     def total(self) -> int:
@@ -95,7 +112,7 @@ def run(item: IngestionItem, manifest_path: Path) -> IngestionResult:
     succeeded: list[IngestionItemResult] = []
     failed: list[IngestionItemResult] = []
 
-    item_result = _ingest_one_item(item, manifest)
+    item_result, verified_file = _ingest_one_item(item, manifest)
     if item_result.status == "verified":
         succeeded.append(item_result)
     else:
@@ -106,6 +123,7 @@ def run(item: IngestionItem, manifest_path: Path) -> IngestionResult:
         StageStatus.FAILED if failed else StageStatus.SUCCESS,
         succeeded=succeeded,
         failed=failed,
+        verified_file=verified_file,
     )
 
     if result.failed:
@@ -119,7 +137,7 @@ def run(item: IngestionItem, manifest_path: Path) -> IngestionResult:
 
 def _ingest_one_item(
     item: IngestionItem, manifest: IngestionManifest
-) -> IngestionItemResult:
+) -> tuple[IngestionItemResult, VerifiedFile | None]:
     """Downloads, hashes, and verifies the item, recording the outcome
     in the manifest. Never raises — any failure (including
     manifest.start_run() itself) is caught, logged to the manifest where
@@ -145,15 +163,29 @@ def _ingest_one_item(
         # config author may reasonably write an uppercase expected_sha256).
         # Without normalizing, an otherwise-correct file would be
         # falsely marked corrupt purely due to letter casing.
+
         if actual_hash.lower() == item.expected_sha256.lower():
             manifest.log_success(run_id, actual_hash, file_size_bytes)
-            return IngestionItemResult(
-                filename=item.filename, url=item.url, run_id=run_id, status="verified"
+            return (
+                IngestionItemResult(
+                    filename=item.filename,
+                    url=item.url,
+                    run_id=run_id,
+                    status="verified",
+                ),
+                VerifiedFile(
+                    path=output_path,
+                    sha256=actual_hash,
+                    size_bytes=file_size_bytes,
+                ),
             )
 
         manifest.log_corrupt(run_id, actual_hash, file_size_bytes, item.expected_sha256)
-        return IngestionItemResult(
-            filename=item.filename, url=item.url, run_id=run_id, status="corrupt"
+        return (
+            IngestionItemResult(
+                filename=item.filename, url=item.url, run_id=run_id, status="corrupt"
+            ),
+            None,
         )
 
     except Exception as e:
@@ -180,10 +212,13 @@ def _ingest_one_item(
                 error_message,
             )
 
-        return IngestionItemResult(
-            filename=item.filename,
-            url=item.url,
-            run_id=run_id or "unset",
-            status="failed",
-            error=error_message,
+        return (
+            IngestionItemResult(
+                filename=item.filename,
+                url=item.url,
+                run_id=run_id or "unset",
+                status="failed",
+                error=error_message,
+            ),
+            None,
         )
